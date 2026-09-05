@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #191A23;
+  --lime: #B9FF66;
+  --white: #FFFFFF;
+  --surface: #F3F3F3;
+  --border: #DADADB;
+  --coral: #FF6B57;
+}
+
+@layer base {
+  body {
+    @apply font-body text-ink bg-white;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-ink text-white font-body font-medium px-6 py-2.5 rounded-pill
+           hover:bg-ink/90 transition-colors duration-150 text-sm;
+  }
+
+  .btn-lime {
+    @apply bg-lime text-ink font-body font-medium px-6 py-2.5 rounded-pill
+           hover:bg-lime/90 transition-colors duration-150 text-sm;
+  }
+
+  .btn-outline {
+    @apply border border-border text-ink font-body font-medium px-6 py-2.5 rounded-pill
+           hover:bg-surface transition-colors duration-150 text-sm;
+  }
+
+  .card {
+    @apply bg-white border border-border rounded-card p-6;
+  }
+
+  .card-surface {
+    @apply bg-surface border border-border rounded-card p-6;
+  }
+
+  .card-ink {
+    @apply bg-ink text-white rounded-card p-6;
+  }
+
+  .badge-lime {
+    @apply bg-lime text-ink text-xs font-body font-medium px-3 py-1 rounded-pill;
+  }
+
+  .badge-coral {
+    @apply bg-coral text-white text-xs font-body font-medium px-3 py-1 rounded-pill;
+  }
+
+  .badge-surface {
+    @apply bg-surface text-ink text-xs font-body font-medium px-3 py-1 rounded-pill border border-border;
+  }
+
+  .status-approved {
+    @apply inline-flex items-center gap-1.5 text-sm font-body font-medium text-ink;
+  }
+
+  .status-blocked {
+    @apply inline-flex items-center gap-1.5 text-sm font-body font-medium text-coral;
+  }
+}

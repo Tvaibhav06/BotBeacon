@@ -1,0 +1,25 @@
+﻿# Python
+backend/.venv/
+buyer-client/.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Environment
+backend/.env
+buyer-client/.env
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
