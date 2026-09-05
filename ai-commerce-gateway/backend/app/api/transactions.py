@@ -162,8 +162,9 @@ async def demo_buyer_request(body: DemoRequest):
                     try:
                         receipt_json = json.loads("".join(receipt_buffer))
                         yield f"data: {json.dumps({'type': 'receipt', 'data': receipt_json})}\n\n"
-                    except json.JSONDecodeError:
-                        pass
+                    except json.JSONDecodeError as e:
+                        yield f"data: {json.dumps({'type': 'log', 'message': f'JSON Parse Error: {e}'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'log', 'message': f'Buffer was: {repr(receipt_buffer)}'})}\n\n"
                 else:
                     receipt_buffer.append(text)
             else:
