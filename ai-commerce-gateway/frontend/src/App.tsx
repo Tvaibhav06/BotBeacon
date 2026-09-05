@@ -6,7 +6,9 @@ import { ComponentShowcase } from "./pages/DevComponents";
 import { LoginPage } from "./pages/LoginPage";
 import { OnboardingWizard } from "./pages/OnboardingWizard";
 import { PassportPage } from "./pages/PassportPage";
-import { RulesPage, SimulatorPage, TransactionsPage } from "./pages/StubPages";
+import { RulesPage, TransactionsPage } from "./pages/StubPages";
+import { SimulatorPage } from "./pages/SimulatorPage";
+import { ReceiptPage } from "./pages/ReceiptPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { TransactionAuditPage } from "./pages/TransactionAuditPage";
 
@@ -21,6 +23,9 @@ function App() {
 
           {/* Phase 0 showcase */}
           <Route path="/dev/components" element={<ComponentShowcase />} />
+
+          {/* Standalone receipt view */}
+          <Route path="/receipt/:id" element={<ReceiptPage />} />
 
           {/* Protected dashboard */}
           <Route element={<DashboardLayout />}>

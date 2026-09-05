@@ -84,6 +84,7 @@ def build_cart(
     buyer_id: str,
     merchant_id: str,
     items: list[dict[str, Any]],
+    reasoning: dict[str, Any] | None = None,
 ) -> dict:
     """
     Build a cart and snapshot current prices into CartItem.unit_price.
@@ -94,9 +95,10 @@ def build_cart(
         buyer_id: Identifier for the AI buyer agent
         merchant_id: Merchant whose catalog to buy from
         items: List of {"product_id": str, "quantity": int, "role": "primary"|"upsell"}
+        reasoning: Optional reasoning from the AI (customer_request, considered_count, why)
     """
     logger.info("MCP build_cart | buyer=%s merchant=%s items=%d", buyer_id, merchant_id, len(items))
-    return _build_cart(buyer_id=buyer_id, merchant_id=merchant_id, items=items)
+    return _build_cart(buyer_id=buyer_id, merchant_id=merchant_id, items=items, reasoning=reasoning)
 
 
 # -------------------------------------------------------------------------

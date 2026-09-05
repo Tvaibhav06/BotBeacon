@@ -47,14 +47,11 @@ def list_transactions(
 )
 def get_receipt(
     transaction_id: str,
-    current: MerchantModel = Depends(get_current_merchant),
     db: Session = Depends(get_db),
 ):
     txn = db.get(TransactionModel, transaction_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
-    if txn.merchant_id != current.id:
-        raise HTTPException(status_code=403, detail="Access denied")
 
     receipt_data = txn.receipt_data or {}
     return DecisionReceipt(
@@ -114,10 +111,64 @@ def get_audit_log(
     return [AuditLogEntry.model_validate(e) for e in entries]
 
 
+from pydantic import BaseModel
+import asyncio
+import json
+from fastapi.responses import StreamingResponse
+
+class DemoRequest(BaseModel):
+    intent: str
+
 @router.post("/demo/buyer-request", tags=["demo"])
-def demo_buyer_request(body: dict):
+async def demo_buyer_request(body: DemoRequest):
     """
-    Stub — will be wired to buyer-client/scripted_buyer.py in Phase 8.
-    Returns a 501 so the frontend can display a clear not-implemented message.
+    Invokes buyer-client/scripted_buyer.py with the given intent string
+    and streams back the stdout line by line via Server-Sent Events (SSE).
     """
-    raise HTTPException(status_code=501, detail="Demo buyer endpoint implemented in Phase 8")
+    async def event_generator():
+        import os
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "/buyer-client"
+        
+        process = await asyncio.create_subprocess_exec(
+            "python", "/buyer-client/scripted_buyer.py", "--intent", body.intent, "--mcp-url", "http://localhost:8000/mcp",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env=env
+        )
+        
+        # Buffer to catch the final JSON receipt block
+        is_receipt = False
+        receipt_buffer = []
+
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            
+            text = line.decode("utf-8").strip()
+            if not text:
+                continue
+                
+            if text == "DECISION RECEIPT:":
+                is_receipt = True
+                continue
+            
+            if is_receipt:
+                # Accumulate receipt JSON
+                if text.startswith("========="):
+                    # End of receipt block
+                    is_receipt = False
+                    try:
+                        receipt_json = json.loads("".join(receipt_buffer))
+                        yield f"data: {json.dumps({'type': 'receipt', 'data': receipt_json})}\n\n"
+                    except json.JSONDecodeError:
+                        pass
+                else:
+                    receipt_buffer.append(text)
+            else:
+                yield f"data: {json.dumps({'type': 'log', 'message': text})}\n\n"
+            
+        await process.wait()
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

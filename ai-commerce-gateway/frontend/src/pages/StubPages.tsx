@@ -385,19 +385,7 @@ export function RulesPage() {
   );
 }
 
-export function SimulatorPage() {
-  return (
-    <div className="p-8">
-      <h1 className="font-heading text-2xl font-bold text-ink mb-2">Buyer Simulator</h1>
-      <p className="font-body text-sm text-ink/50 mb-6">AI buyer demo — implemented in Phase 8</p>
-      <Card>
-        <p className="font-body text-sm text-ink/50 text-center py-8">
-          Buyer Simulator will be available after Phase 8.
-        </p>
-      </Card>
-    </div>
-  );
-}
+// Removed SimulatorPage and ReceiptPage since they are now implemented in their own files
 
 // ── Transaction status helpers ────────────────────────────────────────────────
 

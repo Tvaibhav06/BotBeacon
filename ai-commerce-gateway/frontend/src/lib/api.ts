@@ -82,8 +82,8 @@ export const api = {
   listTransactions: (merchantId: string, token: string) =>
     request<TransactionResult[]>("GET", `/merchants/${merchantId}/transactions`, undefined, token),
 
-  getReceipt: (transactionId: string, token: string) =>
-    request<DecisionReceipt>("GET", `/transactions/${transactionId}/receipt`, undefined, token),
+  getReceipt: (transactionId: string) =>
+    request<DecisionReceipt>("GET", `/transactions/${transactionId}/receipt`),
 
   getAuditTrail: (transactionId: string, token: string) =>
     request<AuditLogEntry[]>("GET", `/transactions/${transactionId}/audit-trail`, undefined, token),
