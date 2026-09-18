@@ -95,6 +95,8 @@ const DEFAULT_RULES: MerchantRules = {
   preferred_categories: [],
   min_margin_pct: 15,
   approval_threshold_amount: 15000,
+  growth_actions_enabled: false,
+  growth_approval_threshold_amount: null,
 };
 
 export function RulesPage() {
@@ -111,6 +113,8 @@ export function RulesPage() {
 
   // threshold toggle: null = no threshold
   const [thresholdEnabled, setThresholdEnabled] = useState(true);
+  // growth threshold toggle: null = always require approval
+  const [growthThresholdEnabled, setGrowthThresholdEnabled] = useState(false);
 
   useEffect(() => {
     if (!merchantId || !token) return;
@@ -121,12 +125,14 @@ export function RulesPage() {
         setRules(r);
         setCategoriesRaw((r.preferred_categories ?? []).join(", "));
         setThresholdEnabled(r.approval_threshold_amount != null);
+        setGrowthThresholdEnabled(r.growth_approval_threshold_amount != null);
       })
       .catch(() => {
         // No rules yet — use defaults
         setRules(DEFAULT_RULES);
         setCategoriesRaw("footwear, accessories");
         setThresholdEnabled(true);
+        setGrowthThresholdEnabled(false);
       })
       .finally(() => setLoading(false));
   }, [merchantId, token]);
@@ -150,6 +156,10 @@ export function RulesPage() {
       approval_threshold_amount: thresholdEnabled
         ? rules.approval_threshold_amount ?? 15000
         : null,
+      growth_actions_enabled: rules.growth_actions_enabled ?? false,
+      growth_approval_threshold_amount: growthThresholdEnabled
+        ? rules.growth_approval_threshold_amount ?? 2000
+        : null,
     };
 
     try {
@@ -157,6 +167,7 @@ export function RulesPage() {
       setRules(updated);
       setCategoriesRaw((updated.preferred_categories ?? []).join(", "));
       setThresholdEnabled(updated.approval_threshold_amount != null);
+      setGrowthThresholdEnabled(updated.growth_approval_threshold_amount != null);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e: unknown) {
@@ -361,6 +372,101 @@ export function RulesPage() {
                   {c}
                 </Badge>
               ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* ── Section: AI Growth Action Controls (§6.4, §8.2) ── */}
+      <Card className="mb-6 border-lime/30 bg-white">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-heading text-base font-semibold text-ink">
+            AI Growth Action Controls
+          </h2>
+          <Badge variant="surface">Growth AI Guardrails</Badge>
+        </div>
+        <p className="font-body text-xs text-ink/50 mb-4">
+          Deterministic limits for autonomous promotions, bundle discounts, and marketing campaigns.
+        </p>
+
+        <InfoCallout>
+          The Growth Policy Gate evaluates these rules <strong>twice</strong>: once when an action is proposed,
+          and again against live rules when you click <strong>Approve</strong>. If rules are tightened in between,
+          the action is immediately blocked.
+        </InfoCallout>
+
+        {/* Growth Actions Master Toggle */}
+        <div className="mt-4 mb-4">
+          <FieldLabel
+            label="Enable Autonomous Growth Actions"
+            hint="Opt-in master switch. When disabled, all AI-proposed campaigns are deterministically BLOCKED."
+          />
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() =>
+                setRules((r) => ({ ...r, growth_actions_enabled: !r.growth_actions_enabled }))
+              }
+              className={`
+                relative inline-flex h-5 w-9 items-center rounded-full transition-colors
+                ${rules.growth_actions_enabled ? "bg-lime" : "bg-ink/20"}
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-3.5 w-3.5 transform rounded-full bg-ink transition-transform
+                  ${rules.growth_actions_enabled ? "translate-x-4 bg-ink" : "translate-x-1 bg-white"}
+                `}
+              />
+            </button>
+            <span className="font-body text-sm font-medium text-ink">
+              {rules.growth_actions_enabled ? "Actions Enabled" : "Actions Disabled (Hard Block)"}
+            </span>
+          </div>
+        </div>
+
+        {/* Growth Approval Threshold */}
+        <div className="pt-3 border-t border-border">
+          <FieldLabel
+            label="Autonomous Growth Approval Threshold"
+            hint="Campaigns with estimated discount exposure above this limit require your explicit approval."
+          />
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => setGrowthThresholdEnabled((v) => !v)}
+              className={`
+                relative inline-flex h-5 w-9 items-center rounded-full transition-colors
+                ${growthThresholdEnabled ? "bg-ink" : "bg-ink/20"}
+              `}
+            >
+              <span
+                className={`
+                  inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform
+                  ${growthThresholdEnabled ? "translate-x-4" : "translate-x-1"}
+                `}
+              />
+            </button>
+            <span className="font-body text-sm text-ink">
+              {growthThresholdEnabled
+                ? "Custom Threshold (Auto-execute under limit)"
+                : "Always require merchant approval (Safe default)"}
+            </span>
+          </div>
+
+          {growthThresholdEnabled && (
+            <div className="mt-3">
+              <NumberField
+                label="Threshold amount"
+                hint="Campaigns with estimated discount exposure above this value will require approval."
+                value={rules.growth_approval_threshold_amount ?? 2000}
+                onChange={(v) =>
+                  setRules((r) => ({ ...r, growth_approval_threshold_amount: v }))
+                }
+                min={0}
+                step={250}
+                suffix="₹"
+              />
             </div>
           )}
         </div>

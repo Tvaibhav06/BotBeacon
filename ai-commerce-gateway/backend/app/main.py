@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.logging import logger
-from app.api import merchants, catalog, rules, transactions, payments, audit
+from app.api import merchants, catalog, rules, transactions, payments, audit, growth, copilot
 from app.mcp.server import create_mcp_app
 
 settings = get_settings()
@@ -14,9 +14,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+cors_origins = [
+    origin.strip()
+    for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
+    if origin.strip()
+] or ["http://localhost:5173", "http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,6 +35,8 @@ app.include_router(rules.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
+app.include_router(growth.router, prefix="/api")
+app.include_router(copilot.router, prefix="/api")
 
 # MCP server — the ONLY agent-facing surface (§4)
 # Mounted at /mcp; exposes /mcp/sse and /mcp/messages/

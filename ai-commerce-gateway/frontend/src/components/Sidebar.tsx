@@ -1,12 +1,14 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  FileText, ShoppingBag, Settings, Zap, Receipt, BookOpen, LogOut
+  FileText, ShoppingBag, Settings, Zap, Receipt, BookOpen, LogOut, TrendingUp, Sparkles
 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 
 const NAV_ITEMS = [
   { to: "/passport",   label: "Passport & Catalog", icon: FileText },
+  { to: "/growth",     label: "Growth AI",           icon: TrendingUp },
+  { to: "/copilot",    label: "Merchant Copilot",    icon: Sparkles },
   { to: "/rules",      label: "Rules",               icon: Settings },
   { to: "/simulator",  label: "Buyer Simulator",     icon: Zap },
   { to: "/transactions", label: "Transactions",      icon: Receipt },

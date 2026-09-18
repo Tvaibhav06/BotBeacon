@@ -11,6 +11,8 @@ import { SimulatorPage } from "./pages/SimulatorPage";
 import { ReceiptPage } from "./pages/ReceiptPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { TransactionAuditPage } from "./pages/TransactionAuditPage";
+import { GrowthPage } from "./pages/GrowthPage";
+import { CopilotPage } from "./pages/CopilotPage";
 
 function App() {
   return (
@@ -30,6 +32,8 @@ function App() {
           {/* Protected dashboard */}
           <Route element={<DashboardLayout />}>
             <Route path="/passport"     element={<PassportPage />} />
+            <Route path="/growth"       element={<GrowthPage />} />
+            <Route path="/copilot"      element={<CopilotPage />} />
             <Route path="/rules"        element={<RulesPage />} />
             <Route path="/simulator"    element={<SimulatorPage />} />
             <Route path="/transactions" element={<TransactionsPage />} />

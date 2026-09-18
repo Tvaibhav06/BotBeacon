@@ -1,9 +1,10 @@
 /**
  * Thin API client for the AI Commerce Gateway backend.
- * All requests go to /api (proxied to :8000 by Vite in development).
+ * Base URL is environment-driven via VITE_API_URL or defaults to /api (Vite dev proxy).
  */
 
-const BASE = "/api";
+const VITE_API_URL = ((import.meta as any).env?.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
+export const API_BASE = VITE_API_URL ? `${VITE_API_URL}/api` : "/api";
 
 async function request<T>(
   method: string,
@@ -16,7 +17,7 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body != null ? JSON.stringify(body) : undefined,
@@ -49,7 +50,7 @@ export const api = {
     request<Product>("PUT", `/merchants/${merchantId}/catalog/${productId}`, update, token),
 
   deleteProduct: (merchantId: string, productId: string, token: string) =>
-    fetch(`${BASE}/merchants/${merchantId}/catalog/${productId}`, {
+    fetch(`${API_BASE}/merchants/${merchantId}/catalog/${productId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     }),
@@ -57,7 +58,7 @@ export const api = {
   uploadCatalogCsv: (merchantId: string, file: File, token: string) => {
     const form = new FormData();
     form.append("file", file);
-    return fetch(`${BASE}/merchants/${merchantId}/catalog/upload`, {
+    return fetch(`${API_BASE}/merchants/${merchantId}/catalog/upload`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -92,6 +93,45 @@ export const api = {
     request<AuditLogEntry[]>(
       "GET",
       `/merchants/${merchantId}/audit-log${stage ? `?stage=${stage}` : ""}`,
+      undefined,
+      token
+    ),
+
+  // Growth AI (Phase 4 & 5)
+  getGrowthInsights: (merchantId: string, token: string) =>
+    request<SalesInsights>("GET", `/merchants/${merchantId}/growth/insights`, undefined, token),
+
+  getGrowthOpportunities: (merchantId: string, token: string, status?: string) =>
+    request<GrowthOpportunity[]>(
+      "GET",
+      `/merchants/${merchantId}/growth/opportunities${status ? `?status=${status}` : ""}`,
+      undefined,
+      token
+    ),
+
+  scanGrowthOpportunities: (merchantId: string, token: string, discountPct?: number) =>
+    request<GrowthScanResponse>(
+      "POST",
+      `/merchants/${merchantId}/growth/opportunities/scan${discountPct ? `?discount_pct=${discountPct}` : ""}`,
+      undefined,
+      token
+    ),
+
+  getGrowthOpportunity: (merchantId: string, oppId: string, token: string) =>
+    request<GrowthOpportunity>("GET", `/merchants/${merchantId}/growth/opportunities/${oppId}`, undefined, token),
+
+  approveGrowthOpportunity: (merchantId: string, oppId: string, token: string) =>
+    request<{ message: string; opportunity_id: string; execution_id: string; status: string }>(
+      "POST",
+      `/merchants/${merchantId}/growth/opportunities/${oppId}/approve`,
+      undefined,
+      token
+    ),
+
+  rejectGrowthOpportunity: (merchantId: string, oppId: string, token: string) =>
+    request<{ message: string; opportunity_id: string; status: string }>(
+      "POST",
+      `/merchants/${merchantId}/growth/opportunities/${oppId}/reject`,
       undefined,
       token
     ),
@@ -139,6 +179,8 @@ export interface MerchantRules {
   preferred_categories: string[];
   min_margin_pct: number;
   approval_threshold_amount?: number | null;
+  growth_approval_threshold_amount?: number | null;
+  growth_actions_enabled?: boolean;
 }
 
 export interface Merchant {
@@ -214,4 +256,137 @@ export interface AuditLogEntry {
   actor: string;
   payload: Record<string, unknown>;
   result: Record<string, unknown>;
+}
+
+// ----- Growth AI Types (§6.2, §6.3, §6.5) -----
+
+export interface TopProductInsight {
+  product_id: string;
+  product_name: string;
+  units_sold: number;
+  revenue: number;
+}
+
+export interface DecliningProductInsight {
+  product_id: string;
+  product_name: string;
+  recent_weekly_units: number;
+  prior_weekly_units: number;
+  units_drop_pct: number;
+}
+
+export interface SalesInsights {
+  trend_pct: number;
+  total_units_recent: number;
+  total_revenue_recent: number;
+  total_units_prior: number;
+  total_revenue_prior: number;
+  top_products: TopProductInsight[];
+  declining_products: DecliningProductInsight[];
+}
+
+export interface GrowthRecommendedAction {
+  type: string;
+  product_ids?: string[];
+  discount_pct?: number;
+  campaign_duration_weeks?: number;
+  audience?: string;
+  [key: string]: unknown;
+}
+
+export interface GrowthOpportunity {
+  id: string;
+  merchant_id: string;
+  opportunity_type: string;
+  title: string;
+  evidence: Record<string, unknown>;
+  recommended_action: GrowthRecommendedAction;
+  estimated_discount_exposure: number;
+  policy_outcome: "allowed" | "requires_approval" | "blocked";
+  policy_reasons: string[];
+  status: "pending_approval" | "executing" | "completed" | "rejected_by_merchant" | "blocked" | "failed";
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface GrowthScanResponse {
+  scanned_at: string;
+  created_count: number;
+  opportunities: GrowthOpportunity[];
+}
+
+export interface GrowthExecution {
+  id: string;
+  opportunity_id: string;
+  n8n_run_id?: string;
+  status: string;
+  request_payload?: Record<string, unknown>;
+  result_payload?: Record<string, unknown>;
+  error?: string;
+  started_at: string;
+  completed_at?: string;
+}
+
+// ----- Copilot SSE Streaming Client (§6.1) -----
+
+export async function streamCopilotChat(
+  merchantId: string,
+  message: string,
+  token: string,
+  callbacks: {
+    onChunk: (text: string) => void;
+    onTool?: (tool: { name: string; status: string }) => void;
+    onOpportunity?: (opp: any) => void;
+    onDone?: (oppId?: string) => void;
+  },
+  history?: Array<{ role: string; content: string }>
+) {
+  const res = await fetch(`${API_BASE}/merchants/${merchantId}/copilot/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ message, history: history || [] }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? `HTTP ${res.status}`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body stream");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("data:")) {
+        try {
+          const data = JSON.parse(trimmed.slice(5).trim());
+          if (data.type === "chunk" && data.text) {
+            callbacks.onChunk(data.text);
+          } else if (data.type === "tool") {
+            callbacks.onTool?.(data);
+          } else if (data.type === "opportunity") {
+            callbacks.onOpportunity?.(data.opportunity);
+          } else if (data.type === "done") {
+            callbacks.onDone?.(data.opportunity_id);
+          }
+        } catch {
+          // ignore partial JSON
+        }
+      }
+    }
+  }
 }

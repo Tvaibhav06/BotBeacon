@@ -14,6 +14,9 @@ const STAGES = [
   "policy_gate",
   "payment",
   "verification",
+  "growth_analysis",
+  "growth_approval",
+  "growth_execution",
 ];
 
 export function AuditLogPage() {

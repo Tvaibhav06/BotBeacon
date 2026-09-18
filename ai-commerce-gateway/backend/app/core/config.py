@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     MCP_TRANSPORT: str = "streamable-http"
     MCP_PORT: int = 8100
     ENVIRONMENT: str = "development"
+    N8N_GROWTH_WEBHOOK_URL: str = ""
+    N8N_WEBHOOK_API_KEY: str = "dev-n8n-webhook-key"
+    N8N_CALLBACK_API_KEY: str = "dev-n8n-callback-key"
+    GROWTH_CALLBACK_BASE_URL: str = "http://localhost:8000"
+    CORS_ALLOWED_ORIGINS: str = ""
 
 
 @lru_cache
