@@ -8,6 +8,9 @@ from app.models.models import (
     PolicyDecisionModel,
     TransactionModel,
     AuditLogModel,
+    SalesRecordModel,
+    GrowthOpportunityModel,
+    GrowthExecutionModel,
 )
 
 __all__ = [
@@ -20,4 +23,7 @@ __all__ = [
     "PolicyDecisionModel",
     "TransactionModel",
     "AuditLogModel",
+    "SalesRecordModel",
+    "GrowthOpportunityModel",
+    "GrowthExecutionModel",
 ]

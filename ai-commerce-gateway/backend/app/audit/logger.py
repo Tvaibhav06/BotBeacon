@@ -16,7 +16,8 @@ from app.core.logging import logger
 
 AuditStage = Literal[
     "passport_activated", "decision_engine", "mandate_check",
-    "policy_gate", "payment", "verification"
+    "policy_gate", "payment", "verification",
+    "growth_analysis", "growth_approval", "growth_execution",
 ]
 AuditActor = Literal["system", "buyer_agent", "merchant"]
 

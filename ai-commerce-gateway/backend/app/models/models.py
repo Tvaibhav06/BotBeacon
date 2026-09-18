@@ -2,12 +2,12 @@
 SQLAlchemy ORM models for AI Commerce Gateway.
 Field names match §5 of the Build Plan exactly.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 
 from sqlalchemy import (
     Boolean, DateTime, Float, ForeignKey, Integer, String, Text,
-    JSON, Enum as SAEnum, func
+    JSON, Enum as SAEnum, func, Date, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,6 +42,9 @@ class MerchantModel(Base):
     audit_logs: Mapped[list["AuditLogModel"]] = relationship(
         "AuditLogModel", back_populates="merchant"
     )
+    growth_opportunities: Mapped[list["GrowthOpportunityModel"]] = relationship(
+        "GrowthOpportunityModel", back_populates="merchant", cascade="all, delete-orphan"
+    )
 
 
 class MerchantRulesModel(Base):
@@ -56,6 +59,13 @@ class MerchantRulesModel(Base):
     preferred_categories: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     min_margin_pct: Mapped[float] = mapped_column(Float, default=10.0, nullable=False)
     approval_threshold_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    growth_approval_threshold_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    growth_actions_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("growth_actions_enabled", False)
+        kwargs.setdefault("growth_approval_threshold_amount", None)
+        super().__init__(**kwargs)
 
     merchant: Mapped["MerchantModel"] = relationship("MerchantModel", back_populates="rules")
 
@@ -193,6 +203,7 @@ class AuditLogModel(Base):
     stage: Mapped[str] = mapped_column(
         SAEnum("passport_activated", "decision_engine", "mandate_check",
                "policy_gate", "payment", "verification",
+               "growth_analysis", "growth_approval", "growth_execution",
                name="audit_stage_enum"),
         nullable=False
     )
@@ -204,3 +215,95 @@ class AuditLogModel(Base):
     result: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     merchant: Mapped["MerchantModel"] = relationship("MerchantModel", back_populates="audit_logs")
+
+
+class SalesRecordModel(Base):
+    __tablename__ = "sales_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("merchants.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    units_sold: Mapped[int] = mapped_column(Integer, nullable=False)
+    revenue: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_sales_records_merchant_product_date", "merchant_id", "product_id", "date"),
+    )
+
+    merchant: Mapped["MerchantModel"] = relationship("MerchantModel")
+    product: Mapped["ProductModel"] = relationship("ProductModel")
+
+
+class GrowthOpportunityModel(Base):
+    __tablename__ = "growth_opportunities"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("merchants.id", ondelete="CASCADE"), nullable=False
+    )
+    opportunity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    recommended_action: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    estimated_discount_exposure: Mapped[float] = mapped_column(Float, nullable=False)
+    policy_outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    policy_reasons: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="new", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("status", "new")
+        kwargs.setdefault("evidence", {})
+        kwargs.setdefault("recommended_action", {})
+        kwargs.setdefault("policy_reasons", [])
+        super().__init__(**kwargs)
+
+    __table_args__ = (
+        Index("ix_growth_opportunities_merchant_status", "merchant_id", "status"),
+    )
+
+    merchant: Mapped["MerchantModel"] = relationship("MerchantModel", back_populates="growth_opportunities")
+    executions: Mapped[list["GrowthExecutionModel"]] = relationship(
+        "GrowthExecutionModel", back_populates="opportunity", cascade="all, delete-orphan"
+    )
+
+
+class GrowthExecutionModel(Base):
+    __tablename__ = "growth_executions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    opportunity_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("growth_opportunities.id", ondelete="CASCADE"), nullable=False
+    )
+    n8n_run_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="executing", nullable=False)
+    request_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    result_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("status", "executing")
+        kwargs.setdefault("request_payload", {})
+        kwargs.setdefault("result_payload", {})
+        super().__init__(**kwargs)
+
+    opportunity: Mapped["GrowthOpportunityModel"] = relationship(
+        "GrowthOpportunityModel", back_populates="executions"
+    )

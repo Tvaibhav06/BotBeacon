@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from app.core.security import hash_password
 from app.db.session import SessionLocal, engine, Base
 from app.models import (
-    MerchantModel, MerchantRulesModel, ProductModel, MandateModel
+    MerchantModel, MerchantRulesModel, ProductModel, MandateModel,
+    SalesRecordModel, CartModel, CartItemModel
 )
 
 
@@ -137,10 +138,20 @@ def seed():
 
     db = SessionLocal()
     try:
-        # Idempotent — skip if merchant already exists
+        # Idempotent — skip if merchant already exists, but ensure sales history & growth rules are seeded
         existing = db.get(MerchantModel, MERCHANT_ID)
         if existing:
-            print(f"Merchant '{MERCHANT_ID}' already exists — skipping seed.")
+            print(f"Merchant '{MERCHANT_ID}' already exists — checking sales history & growth rules…")
+            if existing.rules:
+                if existing.rules.growth_actions_enabled is None or not existing.rules.growth_actions_enabled:
+                    existing.rules.growth_actions_enabled = True
+                if existing.rules.growth_approval_threshold_amount is None:
+                    existing.rules.growth_approval_threshold_amount = 2000.0
+                if existing.rules.max_ai_discount_pct < 15.0:
+                    existing.rules.max_ai_discount_pct = 15.0
+                db.commit()
+            seed_sales_history(db, MERCHANT_ID)
+            print("Seed verification complete.")
             return
 
         # --- Merchant ---
@@ -153,16 +164,17 @@ def seed():
         )
         db.add(merchant)
 
-        # --- Rules (§11) ---
-        # approval_threshold_amount=15000: AI can sell above ₹15k only with merchant approval.
-        # This is NOT a maximum transaction limit.
+        # --- Rules (§11 & Merchant Growth AI PRD §10) ---
+        # max_ai_discount_pct=15.0, growth_approval_threshold_amount=2000.0, growth_actions_enabled=True
         rules = MerchantRulesModel(
             merchant_id=MERCHANT_ID,
-            max_ai_discount_pct=10.0,
+            max_ai_discount_pct=15.0,
             upsell_enabled=True,
             preferred_categories=["footwear", "accessories"],
             min_margin_pct=15.0,
             approval_threshold_amount=15000.0,
+            growth_approval_threshold_amount=2000.0,
+            growth_actions_enabled=True,
         )
         db.add(rules)
 
@@ -211,6 +223,8 @@ def seed():
         print(f"Seed complete: 1 merchant, {len(NAMED_PRODUCTS) + len(FILLER_PRODUCTS)} products, 1 mandate.")
         print(f"  Login: {MERCHANT_EMAIL} / {MERCHANT_PASSWORD}")
 
+        seed_sales_history(db, MERCHANT_ID)
+
     except Exception as e:
         db.rollback()
         print(f"Seed failed: {e}")
@@ -219,5 +233,115 @@ def seed():
         db.close()
 
 
+def seed_sales_history(db, merchant_id: str):
+    """
+    Seed 28 days of historical sales records (§6.2, §8.3, §10):
+    - Velocity Pro (prod_001): down ~35% (8 units/wk prior -> 5 units/wk recent).
+    - Performance Socks (prod_006): defined complement with low historical attach rate.
+    - Other products for realistic top/declining trends.
+    Also seed past carts to establish historical co-occurrence history.
+    """
+    existing_records = db.query(SalesRecordModel).filter(SalesRecordModel.merchant_id == merchant_id).first()
+    if existing_records:
+        print("Sales records already exist — skipping sales history seeding.")
+        return
+
+    today = datetime.now(timezone.utc).date()
+
+    # prod_001: Velocity Pro (price 5499)
+    # Days -27 to -14 (prior 14 days): 16 units total = 8 units/week (revenue: 16 * 5499 = 87,984)
+    prior_days_p1 = [-27, -25, -23, -21, -20, -18, -16, -15]
+    for d_offset in prior_days_p1:
+        d = today + timedelta(days=d_offset)
+        db.add(SalesRecordModel(
+            merchant_id=merchant_id,
+            product_id="prod_001",
+            date=d,
+            units_sold=2,
+            revenue=2 * 5499.0,
+        ))
+
+    # Days -13 to 0 (recent 14 days): 10 units total = 5 units/week (revenue: 10 * 5499 = 54,990)
+    # Pace: 5 units/week. Drop from 8 -> 5 = 37.5% drop (~35%)
+    recent_days_p1 = [-13, -11, -9, -7, -5, -3, -2, -1]
+    for i, d_offset in enumerate(recent_days_p1):
+        units = 2 if i in (0, 3) else 1
+        d = today + timedelta(days=d_offset)
+        db.add(SalesRecordModel(
+            merchant_id=merchant_id,
+            product_id="prod_001",
+            date=d,
+            units_sold=units,
+            revenue=units * 5499.0,
+        ))
+
+    # prod_006: Performance Socks (price 499)
+    # Low sales volume across the month
+    for d_offset in [-26, -20, -14, -10, -5, -1]:
+        d = today + timedelta(days=d_offset)
+        db.add(SalesRecordModel(
+            merchant_id=merchant_id,
+            product_id="prod_006",
+            date=d,
+            units_sold=1,
+            revenue=499.0,
+        ))
+
+    # prod_004: Court Classic (price 3499) — top product, steady ~10 units/week
+    for d_offset in range(-27, 0, 2):
+        d = today + timedelta(days=d_offset)
+        db.add(SalesRecordModel(
+            merchant_id=merchant_id,
+            product_id="prod_004",
+            date=d,
+            units_sold=2,
+            revenue=2 * 3499.0,
+        ))
+
+    # prod_003: Trail Runner X (price 4999) — steady ~6 units/week
+    for d_offset in range(-26, 0, 3):
+        d = today + timedelta(days=d_offset)
+        db.add(SalesRecordModel(
+            merchant_id=merchant_id,
+            product_id="prod_003",
+            date=d,
+            units_sold=2,
+            revenue=2 * 4999.0,
+        ))
+
+    # Seed historical carts to establish low attach rate for prod_001 -> prod_006
+    # 10 past carts for prod_001: 9 bought alone, only 1 bought with prod_006 (10% attach rate)
+    for i in range(10):
+        cart_id = f"cart_hist_demo_{i+1:02d}"
+        if not db.get(CartModel, cart_id):
+            c = CartModel(
+                id=cart_id,
+                merchant_id=merchant_id,
+                buyer_id=f"buyer_hist_{i+1}",
+                total=5499.0 if i > 0 else (5499.0 + 499.0),
+                created_at=datetime.now(timezone.utc) - timedelta(days=20 - i * 2),
+            )
+            db.add(c)
+            db.add(CartItemModel(
+                cart_id=cart_id,
+                product_id="prod_001",
+                quantity=1,
+                unit_price=5499.0,
+                role="primary",
+            ))
+            if i == 0:
+                db.add(CartItemModel(
+                    cart_id=cart_id,
+                    product_id="prod_006",
+                    quantity=1,
+                    unit_price=499.0,
+                    role="upsell",
+                ))
+
+    db.commit()
+    print("Seeded historical sales records and cart co-occurrence history.")
+
+
 if __name__ == "__main__":
     seed()
+

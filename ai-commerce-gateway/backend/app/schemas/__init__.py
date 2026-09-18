@@ -10,6 +10,9 @@ from app.schemas.schemas import (
     DecisionReceipt,
     TokenResponse, LoginRequest,
     PaymentVerifyRequest, PaymentVerifyResponse, PaymentConfigResponse,
+    SalesRecord, SalesRecordBase, SalesRecordCreate,
+    RecommendedAction, GrowthOpportunity, GrowthOpportunityBase, GrowthOpportunityCreate,
+    GrowthExecution, GrowthExecutionBase, GrowthInsightsResponse,
 )
 
 __all__ = [
@@ -24,4 +27,7 @@ __all__ = [
     "DecisionReceipt",
     "TokenResponse", "LoginRequest",
     "PaymentVerifyRequest", "PaymentVerifyResponse", "PaymentConfigResponse",
+    "SalesRecord", "SalesRecordBase", "SalesRecordCreate",
+    "RecommendedAction", "GrowthOpportunity", "GrowthOpportunityBase", "GrowthOpportunityCreate",
+    "GrowthExecution", "GrowthExecutionBase", "GrowthInsightsResponse",
 ]

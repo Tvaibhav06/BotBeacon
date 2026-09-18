@@ -4,7 +4,7 @@ Field names are exact matches; every other section (MCP contracts, REST routes, 
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -78,6 +78,8 @@ class MerchantRules(BaseModel):
     # Above this amount, AI requires merchant approval before checkout.
     # NOT a maximum sales/payment ceiling — see §2 and §8.3.
     approval_threshold_amount: Optional[float] = None
+    growth_approval_threshold_amount: Optional[float] = None
+    growth_actions_enabled: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -288,3 +290,112 @@ class TokenResponse(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+# ---------------------------------------------------------------------------
+# Growth & Sales Schemas (Merchant Growth AI)
+# ---------------------------------------------------------------------------
+
+class SalesRecordBase(BaseModel):
+    merchant_id: str
+    product_id: str
+    date: date
+    units_sold: int
+    revenue: float
+
+
+class SalesRecordCreate(BaseModel):
+    product_id: str
+    date: date
+    units_sold: int
+    revenue: float
+
+
+class SalesRecord(SalesRecordBase):
+    id: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RecommendedAction(BaseModel):
+    type: str = "discount_bundle"
+    product_ids: list[str]
+    discount_pct: float
+    campaign_duration_weeks: int = 1
+    audience: str = "configured_demo_audience"
+
+
+class GrowthOpportunityBase(BaseModel):
+    merchant_id: str
+    opportunity_type: str
+    title: str
+    evidence: dict
+    recommended_action: RecommendedAction
+    estimated_discount_exposure: float
+    policy_outcome: Literal["blocked", "requires_approval", "allowed"]
+    policy_reasons: list[str] = []
+    status: Literal[
+        "new", "blocked", "pending_approval", "executing",
+        "completed", "failed", "rejected_by_merchant"
+    ] = "new"
+
+
+class GrowthOpportunityCreate(BaseModel):
+    opportunity_type: str
+    title: str
+    evidence: dict = {}
+    recommended_action: dict = {}
+    estimated_discount_exposure: float
+    policy_outcome: str
+    policy_reasons: list[str] = []
+    status: str = "new"
+
+
+class GrowthOpportunity(BaseModel):
+    id: str
+    merchant_id: str
+    opportunity_type: str
+    title: str
+    evidence: dict
+    recommended_action: dict
+    estimated_discount_exposure: float
+    policy_outcome: str
+    policy_reasons: list[str]
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GrowthExecutionBase(BaseModel):
+    opportunity_id: str
+    n8n_run_id: Optional[str] = None
+    status: Literal["executing", "completed", "failed"] = "executing"
+    request_payload: dict = {}
+    result_payload: dict = {}
+    error: Optional[str] = None
+
+
+class GrowthExecution(BaseModel):
+    id: str
+    opportunity_id: str
+    n8n_run_id: Optional[str] = None
+    status: str
+    request_payload: dict
+    result_payload: dict
+    error: Optional[str] = None
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class GrowthInsightsResponse(BaseModel):
+    trend_pct: float
+    top_products: list[dict]
+    declining_products: list[dict]
+    total_revenue_recent: float
+    total_units_recent: float
+
