@@ -1,13 +1,25 @@
 import React from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { DecisionReceipt as ReceiptType } from "../lib/api";
+import { formatCurrency } from "../lib/formatters";
 
-export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
-  // Determine block status based on authorization and payment status
+export function DecisionReceipt({ receipt }: { receipt?: ReceiptType | null }) {
+  if (!receipt) {
+    return (
+      <div className="bg-ink rounded-2xl p-6 md:p-8 text-white shadow-2xl overflow-hidden font-body text-center">
+        <p className="text-white/50 text-sm">Receipt details unavailable.</p>
+      </div>
+    );
+  }
+
+  const authStatus = receipt.authorization_status ?? "";
+  const payStatus = receipt.payment_status ?? "";
+
   const isBlocked =
-    receipt.authorization_status.toLowerCase().includes("blocked") ||
-    receipt.payment_status.toLowerCase().includes("never called") ||
-    receipt.payment_status.toLowerCase().includes("failed");
+    authStatus.toLowerCase().includes("blocked") ||
+    payStatus.toLowerCase().includes("never called") ||
+    payStatus.toLowerCase().includes("failed") ||
+    receipt._transaction_status === "blocked";
 
   return (
     <div className="bg-ink rounded-2xl p-6 md:p-8 text-white shadow-2xl overflow-hidden font-body relative">
@@ -22,7 +34,7 @@ export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
       <div className="mb-8">
         <h3 className="text-[10px] uppercase tracking-wider text-white/40 mb-1">Request</h3>
         <p className="text-lg md:text-xl font-medium leading-snug">
-          "{receipt.customer_request}"
+          "{receipt.customer_request ?? ""}"
         </p>
       </div>
 
@@ -42,8 +54,8 @@ export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
             <div className="grid grid-cols-[100px_1fr] items-start">
               <span className="text-[10px] uppercase tracking-wider text-white/40 mt-1">Selected</span>
               <div>
-                <span className="block text-base font-medium">{receipt.selected.product_id}</span>
-                <span className="block text-sm text-lime">₹{receipt.selected.unit_price.toLocaleString("en-IN")}</span>
+                <span className="block text-base font-medium">{receipt.selected.product_id ?? "—"}</span>
+                <span className="block text-sm text-lime">{formatCurrency(receipt.selected.unit_price)}</span>
               </div>
             </div>
           )}
@@ -68,9 +80,9 @@ export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
             <div className="grid grid-cols-[100px_1fr] items-start border-t border-white/10 pt-6">
               <span className="text-[10px] uppercase tracking-wider text-white/40 mt-1">Upsell</span>
               <div>
-                <span className="block text-sm font-medium">{receipt.upsell.product_id}</span>
+                <span className="block text-sm font-medium">{receipt.upsell.product_id ?? "—"}</span>
                 <span className="block text-xs text-white/60 mb-1">Highest-value eligible complement</span>
-                <span className="block text-sm text-lime">₹{receipt.upsell.unit_price.toLocaleString("en-IN")}</span>
+                <span className="block text-sm text-lime">{formatCurrency(receipt.upsell.unit_price)}</span>
               </div>
             </div>
           )}
@@ -82,7 +94,7 @@ export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
         <div className="flex items-end justify-between">
           <span className="text-[10px] uppercase tracking-wider text-white/40 pb-2">Final</span>
           <span className="font-heading text-4xl md:text-5xl font-bold text-lime">
-            ₹{receipt.final_total.toLocaleString("en-IN")}
+            {formatCurrency(receipt.final_total)}
           </span>
         </div>
       </div>
@@ -95,15 +107,15 @@ export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
             Authorization
           </span>
           <div className="flex items-start gap-1.5 flex-1">
-            {receipt.authorization_status.toLowerCase().includes("blocked") ? (
+            {authStatus.toLowerCase().includes("blocked") ? (
               <XCircle size={14} className="text-coral shrink-0 mt-0.5" />
             ) : (
               <CheckCircle2 size={14} className="text-lime shrink-0 mt-0.5" />
             )}
             <span className={`text-sm leading-snug font-medium ${
-              receipt.authorization_status.toLowerCase().includes("blocked") ? "text-coral" : "text-white"
+              authStatus.toLowerCase().includes("blocked") ? "text-coral" : "text-white"
             }`}>
-              {receipt.authorization_status}
+              {authStatus || "—"}
             </span>
           </div>
         </div>
@@ -114,15 +126,15 @@ export function DecisionReceipt({ receipt }: { receipt: ReceiptType }) {
             Payment
           </span>
           <div className="flex items-start gap-1.5 flex-1">
-            {receipt.payment_status.toLowerCase().includes("never called") || receipt.payment_status.toLowerCase().includes("failed") ? (
+            {payStatus.toLowerCase().includes("never called") || payStatus.toLowerCase().includes("failed") ? (
               <XCircle size={14} className="text-coral shrink-0 mt-0.5" />
             ) : (
               <CheckCircle2 size={14} className="text-lime shrink-0 mt-0.5" />
             )}
             <span className={`text-sm leading-snug font-medium ${
-              (receipt.payment_status.toLowerCase().includes("never called") || receipt.payment_status.toLowerCase().includes("failed")) ? "text-coral" : "text-white"
+              (payStatus.toLowerCase().includes("never called") || payStatus.toLowerCase().includes("failed")) ? "text-coral" : "text-white"
             }`}>
-              {receipt.payment_status}
+              {payStatus || "—"}
             </span>
           </div>
         </div>

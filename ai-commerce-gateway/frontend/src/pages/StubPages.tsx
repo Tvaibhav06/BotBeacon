@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Save, ShieldCheck, AlertTriangle, Info, CreditCard, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { api, MerchantRules, TransactionResult, PaymentVerifyResponse } from "../lib/api";
+import { formatCurrency } from "../lib/formatters";
 import { useAuth } from "../lib/AuthContext";
 import { Card } from "../design-system/Card";
 import { Button } from "../design-system/Button";
@@ -619,7 +620,7 @@ export function TransactionsPage() {
                         {txn.id}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 font-body text-sm text-ink font-medium">₹{txn.amount.toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-3 font-body text-sm text-ink font-medium">{formatCurrency(txn.amount)}</td>
                     <td className="px-4 py-3 font-mono text-xs text-ink/50">
                       {txn.razorpay_order_id ?? <span className="text-coral/60 italic">none — blocked</span>}
                     </td>

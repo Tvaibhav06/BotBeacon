@@ -12,14 +12,17 @@ import {
   ArrowRight,
   Package,
   Layers,
+  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import {
   api,
+  ApiError,
   SalesInsights,
   GrowthOpportunity,
   MerchantRules,
 } from "../lib/api";
+import { formatNumber, formatCurrency, formatDate } from "../lib/formatters";
 import { Card } from "../design-system/Card";
 import { Button } from "../design-system/Button";
 import { Badge } from "../design-system/Badge";
@@ -29,8 +32,12 @@ export function GrowthPage() {
   const { merchantId, token } = useAuth();
 
   const [insights, setInsights] = useState<SalesInsights | null>(null);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<GrowthOpportunity[]>([]);
+  const [oppsError, setOppsError] = useState<string | null>(null);
   const [rules, setRules] = useState<MerchantRules | null>(null);
+  const [rulesError, setRulesError] = useState<string | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
@@ -39,17 +46,72 @@ export function GrowthPage() {
   const loadData = useCallback(async () => {
     if (!merchantId || !token) return;
     setLoading(true);
+    setGlobalError(null);
     try {
-      const [ins, opps, r] = await Promise.all([
-        api.getGrowthInsights(merchantId, token).catch(() => null),
-        api.getGrowthOpportunities(merchantId, token).catch(() => []),
-        api.getRules(merchantId, token).catch(() => null),
+      const [insRes, oppsRes, rulesRes] = await Promise.allSettled([
+        api.getGrowthInsights(merchantId, token),
+        api.getGrowthOpportunities(merchantId, token),
+        api.getRules(merchantId, token),
       ]);
-      setInsights(ins);
-      setOpportunities(opps);
-      setRules(r);
+
+      // Check for auth failures (401)
+      const allResults = [insRes, oppsRes, rulesRes];
+      const hasAuthError = allResults.some(
+        (r) => r.status === "rejected" && r.reason instanceof ApiError && r.reason.isUnauthorized
+      );
+      if (hasAuthError) {
+        setGlobalError("Authentication session expired. Please sign in again.");
+        return;
+      }
+
+      const hasForbiddenError = allResults.some(
+        (r) => r.status === "rejected" && r.reason instanceof ApiError && r.reason.isForbidden
+      );
+      if (hasForbiddenError) {
+        setGlobalError("Access denied: You do not have permission to view this merchant's growth data.");
+        return;
+      }
+
+      // If all three calls rejected, show global failure
+      if (allResults.every((r) => r.status === "rejected")) {
+        const firstErr = (insRes as PromiseRejectedResult).reason;
+        const msg = firstErr instanceof ApiError
+          ? (firstErr.isNetworkError ? "Network failure: Unable to reach gateway server. Please check your connection." : `Server error (HTTP ${firstErr.status}): ${firstErr.detail}`)
+          : firstErr instanceof Error ? firstErr.message : "Failed to load growth data";
+        setGlobalError(msg);
+        return;
+      }
+
+      // Section: Insights
+      if (insRes.status === "fulfilled") {
+        setInsights(insRes.value);
+        setInsightsError(null);
+      } else {
+        const err = insRes.reason;
+        setInsights(null);
+        setInsightsError(err instanceof ApiError ? err.detail : "Failed to load sales insights");
+      }
+
+      // Section: Opportunities
+      if (oppsRes.status === "fulfilled") {
+        setOpportunities(Array.isArray(oppsRes.value) ? oppsRes.value : []);
+        setOppsError(null);
+      } else {
+        const err = oppsRes.reason;
+        setOpportunities([]);
+        setOppsError(err instanceof ApiError ? err.detail : "Failed to load growth opportunities");
+      }
+
+      // Section: Rules
+      if (rulesRes.status === "fulfilled") {
+        setRules(rulesRes.value);
+        setRulesError(null);
+      } else {
+        setRules(null);
+        setRulesError("Merchant rules unavailable");
+      }
     } catch (err: any) {
-      setMessage({ text: err.message || "Failed to load growth data", type: "error" });
+      setGlobalError(err.message || "Failed to load growth data");
     } finally {
       setLoading(false);
     }
@@ -107,6 +169,30 @@ export function GrowthPage() {
 
   const pendingCount = opportunities.filter((o) => o.status === "pending_approval").length;
   const completedCount = opportunities.filter((o) => o.status === "completed").length;
+
+  if (globalError) {
+    return (
+      <div className="p-8 max-w-6xl">
+        <div className="flex items-center gap-2 mb-6">
+          <h1 className="font-heading text-2xl font-bold text-ink">Growth AI</h1>
+        </div>
+        <Card className="p-8 text-center bg-white border border-border">
+          <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+            <div className="w-10 h-10 rounded-full bg-coral/10 flex items-center justify-center text-coral mb-3">
+              <AlertCircle size={20} />
+            </div>
+            <h3 className="font-heading font-semibold text-ink text-base mb-1">
+              Failed to load Growth dashboard
+            </h3>
+            <p className="font-body text-xs text-ink/60 mb-4 leading-relaxed">{globalError}</p>
+            <Button variant="outline" size="sm" onClick={loadData}>
+              Retry
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 max-w-6xl">
@@ -180,6 +266,19 @@ export function GrowthPage() {
         </div>
       )}
 
+      {/* Section-specific error for sales insights */}
+      {insightsError && (
+        <div className="mb-6 p-3.5 rounded-xl bg-coral/10 border border-coral/30 flex items-center justify-between text-xs text-coral">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{insightsError}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={loadData} className="text-xs h-7">
+            Retry Insights
+          </Button>
+        </div>
+      )}
+
       {/* KPI Overview Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {/* Trend */}
@@ -189,9 +288,9 @@ export function GrowthPage() {
           </p>
           <div className="flex items-baseline gap-2">
             <span className="font-heading font-bold text-2xl text-ink">
-              ₹{insights ? insights.total_revenue_recent.toLocaleString("en-IN") : "—"}
+              {formatCurrency(insights?.total_revenue_recent)}
             </span>
-            {insights && (
+            {insights && typeof insights.trend_pct === "number" && Number.isFinite(insights.trend_pct) && (
               <span
                 className={`inline-flex items-center text-xs font-semibold px-1.5 py-0.5 rounded ${
                   insights.trend_pct < 0
@@ -209,7 +308,7 @@ export function GrowthPage() {
             )}
           </div>
           <p className="font-body text-xs text-ink/40 mt-1">
-            Prior window: ₹{insights ? insights.total_revenue_prior.toLocaleString("en-IN") : "—"}
+            Prior window: {formatCurrency(insights?.total_revenue_prior)}
           </p>
         </Card>
 
@@ -220,12 +319,12 @@ export function GrowthPage() {
           </p>
           <div className="flex items-baseline gap-2">
             <span className="font-heading font-bold text-2xl text-ink">
-              {insights ? insights.total_units_recent : "—"}
+              {formatNumber(insights?.total_units_recent)}
             </span>
             <span className="text-xs text-ink/50">units</span>
           </div>
           <p className="font-body text-xs text-ink/40 mt-1">
-            Prior window: {insights ? insights.total_units_prior : "—"} units
+            Prior window: {formatNumber(insights?.total_units_prior)} units
           </p>
         </Card>
 
@@ -256,13 +355,14 @@ export function GrowthPage() {
           </p>
           <div className="flex items-baseline gap-1.5">
             <span className="font-heading font-bold text-lg text-ink">
-              Max {rules?.max_ai_discount_pct ?? 15}% Off
+              Max {typeof rules?.max_ai_discount_pct === "number" ? rules.max_ai_discount_pct : 15}% Off
             </span>
           </div>
           <p className="font-body text-xs text-ink/60 mt-1 truncate">
             Approval threshold:{" "}
-            {rules?.growth_approval_threshold_amount != null
-              ? `₹${rules.growth_approval_threshold_amount.toLocaleString("en-IN")}`
+            {typeof rules?.growth_approval_threshold_amount === "number" &&
+            Number.isFinite(rules.growth_approval_threshold_amount)
+              ? formatCurrency(rules.growth_approval_threshold_amount)
               : "Always ask (Safe default)"}
           </p>
         </Card>
@@ -278,9 +378,9 @@ export function GrowthPage() {
                 <TrendingDown className="w-4 h-4 text-coral" />
                 Declining Sales Signals
               </h3>
-              <Badge variant="surface">{insights.declining_products.length} Detected</Badge>
+              <Badge variant="surface">{(insights.declining_products ?? []).length} Detected</Badge>
             </div>
-            {insights.declining_products.length === 0 ? (
+            {!(insights.declining_products && insights.declining_products.length > 0) ? (
               <p className="font-body text-xs text-ink/50 py-3">
                 No significant product declines detected in the current 14-day window.
               </p>
@@ -292,13 +392,15 @@ export function GrowthPage() {
                     className="p-2.5 rounded-lg bg-surface flex items-center justify-between text-xs"
                   >
                     <div>
-                      <p className="font-semibold text-ink">{d.product_name}</p>
+                      <p className="font-semibold text-ink">{d.product_name || "Product"}</p>
                       <p className="text-ink/50 text-[11px]">
-                        Dropped from {d.prior_weekly_units} to {d.recent_weekly_units} units/week
+                        Dropped from {formatNumber(d.prior_weekly_units)} to {formatNumber(d.recent_weekly_units)} units/week
                       </p>
                     </div>
                     <span className="font-bold text-coral font-mono">
-                      -{d.units_drop_pct.toFixed(1)}%
+                      -{typeof d.units_drop_pct === "number" && Number.isFinite(d.units_drop_pct)
+                        ? d.units_drop_pct.toFixed(1)
+                        : "—"}%
                     </span>
                   </div>
                 ))}
@@ -313,24 +415,30 @@ export function GrowthPage() {
                 <Package className="w-4 h-4 text-ink/70" />
                 Top Revenue Products (14-Day)
               </h3>
-              <Badge variant="surface">{insights.top_products.length} Products</Badge>
+              <Badge variant="surface">{(insights.top_products ?? []).length} Products</Badge>
             </div>
-            <div className="space-y-2 mt-2">
-              {insights.top_products.map((p) => (
-                <div
-                  key={p.product_id}
-                  className="p-2.5 rounded-lg bg-surface flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <p className="font-semibold text-ink">{p.product_name}</p>
-                    <p className="text-ink/50 text-[11px]">{p.units_sold} units sold</p>
+            {!(insights.top_products && insights.top_products.length > 0) ? (
+              <p className="font-body text-xs text-ink/50 py-3">
+                No recent sales recorded in the current window.
+              </p>
+            ) : (
+              <div className="space-y-2 mt-2">
+                {insights.top_products.map((p) => (
+                  <div
+                    key={p.product_id}
+                    className="p-2.5 rounded-lg bg-surface flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <p className="font-semibold text-ink">{p.product_name || "Product"}</p>
+                      <p className="text-ink/50 text-[11px]">{formatNumber(p.units_sold)} units sold</p>
+                    </div>
+                    <span className="font-semibold text-ink">
+                      {formatCurrency(p.revenue, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
-                  <span className="font-semibold text-ink">
-                    ₹{p.revenue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -367,7 +475,20 @@ export function GrowthPage() {
       </div>
 
       {/* Opportunity Cards List */}
-      {filteredOpps.length === 0 ? (
+      {oppsError ? (
+        <Card className="p-8 text-center bg-white border border-border">
+          <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+            <AlertCircle size={24} className="text-coral mb-2" />
+            <h3 className="font-heading font-semibold text-sm text-ink mb-1">
+              Failed to load opportunities
+            </h3>
+            <p className="font-body text-xs text-ink/60 mb-4">{oppsError}</p>
+            <Button variant="outline" size="sm" onClick={loadData}>
+              Retry Loading Opportunities
+            </Button>
+          </div>
+        </Card>
+      ) : filteredOpps.length === 0 ? (
         <Card className="p-8 text-center bg-white border border-border">
           <p className="font-body text-sm text-ink/50 mb-3">
             No growth opportunities match the selected filter.

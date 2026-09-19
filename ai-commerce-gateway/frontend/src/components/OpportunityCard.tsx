@@ -11,7 +11,8 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { GrowthOpportunity } from "../lib/api";
+import { GrowthOpportunity, GrowthRecommendedAction } from "../lib/api";
+import { formatNumber, formatCurrency, formatDate } from "../lib/formatters";
 import { Card } from "../design-system/Card";
 import { Button } from "../design-system/Button";
 import { Badge } from "../design-system/Badge";
@@ -32,16 +33,16 @@ export function OpportunityCard({
   const [actionError, setActionError] = useState<string | null>(null);
 
   const {
-    id,
-    title,
-    opportunity_type,
-    evidence,
-    recommended_action,
+    id = "",
+    title = "",
+    opportunity_type = "declining_sales",
+    evidence = {} as Record<string, unknown>,
+    recommended_action = {} as GrowthRecommendedAction,
     estimated_discount_exposure,
-    policy_outcome,
-    policy_reasons,
-    status,
-  } = opportunity;
+    policy_outcome = "blocked",
+    policy_reasons = [],
+    status = "new",
+  } = opportunity || {};
 
   const isPending = status === "pending_approval";
   const isBlocked = status === "blocked" || policy_outcome === "blocked";
@@ -137,7 +138,7 @@ export function OpportunityCard({
             Est. Discount Exposure
           </p>
           <p className="font-heading font-bold text-ink text-base">
-            ₹{estimated_discount_exposure.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            {formatCurrency(estimated_discount_exposure, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
         </div>
       </div>
@@ -149,22 +150,28 @@ export function OpportunityCard({
             Action Details
           </p>
           <p className="text-ink font-medium">
-            Type: <span className="text-ink/70 font-normal">{recommended_action.type || "discount_bundle"}</span>
+            Type: <span className="text-ink/70 font-normal">{recommended_action?.type ? String(recommended_action.type) : "discount_bundle"}</span>
           </p>
           <p className="text-ink font-medium">
             Discount:{" "}
-            <span className="text-ink/70 font-normal">{recommended_action.discount_pct || 10}% off</span>
+            <span className="text-ink/70 font-normal">
+              {typeof recommended_action?.discount_pct === "number" && Number.isFinite(recommended_action.discount_pct)
+                ? `${recommended_action.discount_pct}% off`
+                : "—"}
+            </span>
           </p>
           <p className="text-ink font-medium">
             Duration:{" "}
             <span className="text-ink/70 font-normal">
-              {recommended_action.campaign_duration_weeks || 1} week(s)
+              {typeof recommended_action?.campaign_duration_weeks === "number" && Number.isFinite(recommended_action.campaign_duration_weeks)
+                ? `${recommended_action.campaign_duration_weeks} week(s)`
+                : "—"}
             </span>
           </p>
           <p className="text-ink font-medium">
             Audience:{" "}
             <span className="text-ink/70 font-normal">
-              {recommended_action.audience || "Configured Demo Audience"}
+              {recommended_action?.audience ? String(recommended_action.audience) : "Configured Demo Audience"}
             </span>
           </p>
         </div>
@@ -178,16 +185,16 @@ export function OpportunityCard({
               <p className="text-ink font-medium">
                 Trend:{" "}
                 <span className="text-coral font-semibold">
-                  {typeof evidence.units_drop_pct === "number"
-                    ? `-${(evidence.units_drop_pct as number).toFixed(1)}% drop`
+                  {typeof evidence?.units_drop_pct === "number" && Number.isFinite(evidence.units_drop_pct)
+                    ? `-${evidence.units_drop_pct.toFixed(1)}% drop`
                     : "Declining sales volume"}
                 </span>
               </p>
               <p className="text-ink/70">
-                Units: {String(evidence.recent_weekly_units ?? 5)} recent / {String(evidence.prior_weekly_units ?? 8)} prior weekly
+                Units: {formatNumber(evidence?.recent_weekly_units as number | undefined)} recent / {formatNumber(evidence?.prior_weekly_units as number | undefined)} prior weekly
               </p>
               <p className="text-ink/70">
-                Primary: {String(evidence.product_name ?? "Velocity Pro")}
+                Primary: {evidence?.product_name ? String(evidence.product_name) : "Velocity Pro"}
               </p>
             </div>
           ) : (
@@ -195,14 +202,18 @@ export function OpportunityCard({
               <p className="text-ink font-medium">
                 Attach Rate:{" "}
                 <span className="text-amber-700 font-semibold">
-                  {String(evidence.attach_rate_pct ?? 10.0)}%
+                  {typeof evidence?.attach_rate_pct === "number" && Number.isFinite(evidence.attach_rate_pct)
+                    ? `${evidence.attach_rate_pct}%`
+                    : evidence?.attach_rate_pct != null
+                    ? `${String(evidence.attach_rate_pct)}%`
+                    : "—"}
                 </span>
               </p>
               <p className="text-ink/70">
-                Primary: {String(evidence.primary_product_name ?? "Velocity Pro")}
+                Primary: {evidence?.primary_product_name ? String(evidence.primary_product_name) : "Velocity Pro"}
               </p>
               <p className="text-ink/70">
-                Complement: {String(evidence.complement_product_name ?? "Performance Socks")}
+                Complement: {evidence?.complement_product_name ? String(evidence.complement_product_name) : "Performance Socks"}
               </p>
             </div>
           )}
@@ -210,7 +221,7 @@ export function OpportunityCard({
       </div>
 
       {/* Policy Reasons & Alerts */}
-      {policy_reasons && policy_reasons.length > 0 && (
+      {Array.isArray(policy_reasons) && policy_reasons.length > 0 && (
         <div className="mb-3 text-xs">
           {isBlocked ? (
             <div className="bg-coral/5 border border-coral/20 text-coral p-2.5 rounded-lg flex items-start gap-2">
@@ -219,14 +230,15 @@ export function OpportunityCard({
                 <p className="font-semibold">Blocked by Policy Gate:</p>
                 <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
                   {policy_reasons.map((r, i) => (
-                    <li key={i}>{r}</li>
+                    <li key={i}>{typeof r === "string" ? r : JSON.stringify(r)}</li>
                   ))}
                 </ul>
               </div>
             </div>
           ) : (
             <div className="text-ink/60 bg-surface px-3 py-1.5 rounded-md border border-border">
-              <span className="font-medium text-ink/80">Policy Note:</span> {policy_reasons.join("; ")}
+              <span className="font-medium text-ink/80">Policy Note:</span>{" "}
+              {policy_reasons.map((r) => (typeof r === "string" ? r : JSON.stringify(r))).join("; ")}
             </div>
           )}
         </div>

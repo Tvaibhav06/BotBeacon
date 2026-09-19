@@ -245,17 +245,21 @@ class PaymentConfigResponse(BaseModel):
 # Audit Log
 # ---------------------------------------------------------------------------
 
+AuditStage = Literal[
+    "passport_activated", "decision_engine", "mandate_check",
+    "policy_gate", "payment", "verification",
+    "growth_analysis", "growth_approval", "growth_execution",
+]
+AuditActor = Literal["system", "buyer_agent", "merchant"]
+
 class AuditLogEntry(BaseModel):
     id: str
     timestamp: datetime
     merchant_id: str
     transaction_id: str | None = None
     cart_id: str | None = None
-    stage: Literal[
-        "passport_activated", "decision_engine", "mandate_check",
-        "policy_gate", "payment", "verification"
-    ]
-    actor: Literal["system", "buyer_agent", "merchant"]
+    stage: AuditStage
+    actor: AuditActor
     payload: dict
     result: dict
 
@@ -393,9 +397,11 @@ class GrowthExecution(BaseModel):
 
 
 class GrowthInsightsResponse(BaseModel):
-    trend_pct: float
-    top_products: list[dict]
-    declining_products: list[dict]
-    total_revenue_recent: float
-    total_units_recent: float
+    trend_pct: float = 0.0
+    top_products: list[dict] = []
+    declining_products: list[dict] = []
+    total_revenue_recent: float = 0.0
+    total_units_recent: float = 0.0
+    total_revenue_prior: float = 0.0
+    total_units_prior: float = 0.0
 

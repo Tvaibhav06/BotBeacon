@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { Play, CheckCircle2, Circle, AlertCircle, RefreshCw, XCircle } from "lucide-react";
-import { DecisionReceipt as ReceiptType } from "../lib/api";
+import { DecisionReceipt as ReceiptType, API_BASE, ApiError } from "../lib/api";
 import { useRazorpayCheckout } from "../lib/useRazorpayCheckout";
 import { useAuth } from "../lib/AuthContext";
 import { DecisionReceipt } from "../components/DecisionReceipt";
@@ -35,14 +35,26 @@ export function SimulatorPage() {
     setIsBlocked(false);
 
     try {
-      const response = await fetch("/api/demo/buyer-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE}/demo/buyer-request`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ intent }),
+        });
+      } catch (netErr: any) {
+        throw new ApiError(0, "Network failure: Unable to reach simulation service. Please check your connection.", netErr?.message);
+      }
 
-      if (!response.ok) throw new Error("Failed to start simulation");
-      if (!response.body) throw new Error("No response body");
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({ detail: response.statusText || `HTTP ${response.status}` }));
+        const detail = typeof errJson?.detail === "string" ? errJson.detail : JSON.stringify(errJson?.detail || "Simulation failed");
+        throw new ApiError(response.status, `Simulation failed (${response.status}): ${detail}`, detail);
+      }
+      if (!response.body) throw new ApiError(500, "No response stream received from simulation service.");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
@@ -73,13 +85,20 @@ export function SimulatorPage() {
 
               } else if (data.type === "receipt") {
                 const r = data.data;
+                if (!r || typeof r !== "object") {
+                  console.warn("Received empty or malformed receipt payload", r);
+                  setCurrentStage("done");
+                  continue;
+                }
                 setReceipt(r);
                 if (r._transaction_status === "pending_payment" && r._razorpay_order_id) {
-                  if (token) {
+                  const finalTotal = typeof r.final_total === "number" ? r.final_total : Number(r.final_total);
+                  const txnId = r.transaction_id || "";
+                  if (token && Number.isFinite(finalTotal) && finalTotal > 0 && txnId) {
                     openCheckout({
                       razorpay_order_id: r._razorpay_order_id,
-                      amount: r.final_total,
-                      transaction_id: r.transaction_id,
+                      amount: finalTotal,
+                      transaction_id: txnId,
                       token: token,
                       onVerified: (res) => {
                         console.log("Verified:", res);
@@ -92,7 +111,9 @@ export function SimulatorPage() {
                       }
                     });
                   } else {
-                    console.warn("No token available for checkout");
+                    if (!token) console.warn("No token available for checkout");
+                    if (!txnId) console.warn("Missing transaction_id in receipt");
+                    if (!Number.isFinite(finalTotal) || finalTotal <= 0) console.warn("Invalid final_total in receipt:", r.final_total);
                     setCurrentStage("done");
                   }
                 } else {
@@ -105,9 +126,10 @@ export function SimulatorPage() {
           }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setLogs((prev) => [...prev, "ERROR: Connection lost or failed to parse response."]);
+      const msg = err instanceof ApiError ? `ERROR: ${err.message}` : `ERROR: ${err?.message || "Connection lost or failed to parse response."}`;
+      setLogs((prev) => [...prev, msg]);
       setCurrentStage("done");
     } finally {
       setIsRunning(false);

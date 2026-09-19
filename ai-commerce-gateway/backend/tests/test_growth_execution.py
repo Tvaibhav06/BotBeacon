@@ -558,3 +558,22 @@ class TestCallbackAndIdempotency:
             .count()
         )
         assert audit_count_after == audit_count_before
+
+    def test_growth_insights_endpoint_returns_all_required_fields_including_prior_window(
+        self, auth_headers
+    ):
+        resp = client.get(
+            f"/api/merchants/{MERCHANT_ID}/growth/insights",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "trend_pct" in data
+        assert "total_revenue_recent" in data
+        assert "total_units_recent" in data
+        assert "total_revenue_prior" in data
+        assert "total_units_prior" in data
+        assert "top_products" in data
+        assert "declining_products" in data
+        assert isinstance(data["total_revenue_prior"], (int, float))
+        assert isinstance(data["total_units_prior"], (int, float))

@@ -147,19 +147,17 @@ class MerchantCopilotAgent:
             write_audit_event(
                 self.db,
                 merchant_id=self.merchant_id,
-                actor="growth_copilot",
+                actor="system",
                 stage="growth_analysis",
-                action="opportunity_discovered",
-                payload={"opportunity_id": opp.id, "type": opp.opportunity_type},
+                payload={"action": "opportunity_discovered", "opportunity_id": opp.id, "type": opp.opportunity_type},
                 result={"status": "created", "exposure": opp.estimated_discount_exposure},
             )
             write_audit_event(
                 self.db,
                 merchant_id=self.merchant_id,
-                actor="growth_policy_gate",
+                actor="system",
                 stage="growth_approval",
-                action="evaluate_policy",
-                payload={"opportunity_id": opp.id, "check": "initial_policy_gate"},
+                payload={"action": "evaluate_policy", "opportunity_id": opp.id, "check": "initial_policy_gate"},
                 result={"outcome": opp.policy_outcome, "reasons": opp.policy_reasons},
             )
 

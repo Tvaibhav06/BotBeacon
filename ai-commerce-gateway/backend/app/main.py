@@ -18,7 +18,7 @@ cors_origins = [
     origin.strip()
     for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
     if origin.strip()
-] or ["http://localhost:5173", "http://localhost:3000"]
+] or ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"]
 
 app.add_middleware(
     CORSMiddleware,

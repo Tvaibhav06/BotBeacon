@@ -6,6 +6,34 @@
 const VITE_API_URL = ((import.meta as any).env?.VITE_API_URL as string | undefined)?.replace(/\/$/, "");
 export const API_BASE = VITE_API_URL ? `${VITE_API_URL}/api` : "/api";
 
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, message: string, detail?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail ?? message;
+  }
+
+  get isNetworkError(): boolean {
+    return this.status === 0;
+  }
+  get isUnauthorized(): boolean {
+    return this.status === 401;
+  }
+  get isForbidden(): boolean {
+    return this.status === 403;
+  }
+  get isNotFound(): boolean {
+    return this.status === 404;
+  }
+  get isServerError(): boolean {
+    return this.status >= 500;
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -17,15 +45,21 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body != null ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+  } catch (netErr: any) {
+    throw new ApiError(0, "Network failure: Unable to connect to server. Please check your network connection.", netErr?.message);
+  }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({ detail: res.statusText || `HTTP ${res.status}` }));
+    const detailMsg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail ?? `HTTP ${res.status}`);
+    throw new ApiError(res.status, detailMsg, detailMsg);
   }
   return res.json();
 }
@@ -50,19 +84,26 @@ export const api = {
     request<Product>("PUT", `/merchants/${merchantId}/catalog/${productId}`, update, token),
 
   deleteProduct: (merchantId: string, productId: string, token: string) =>
-    fetch(`${API_BASE}/merchants/${merchantId}/catalog/${productId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+    request<void>("DELETE", `/merchants/${merchantId}/catalog/${productId}`, undefined, token),
 
-  uploadCatalogCsv: (merchantId: string, file: File, token: string) => {
+  uploadCatalogCsv: async (merchantId: string, file: File, token: string) => {
     const form = new FormData();
     form.append("file", file);
-    return fetch(`${API_BASE}/merchants/${merchantId}/catalog/upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
-    }).then((r) => r.json());
+    let r: Response;
+    try {
+      r = await fetch(`${API_BASE}/merchants/${merchantId}/catalog/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+    } catch (netErr: any) {
+      throw new ApiError(0, "Network failure: Unable to upload CSV", netErr?.message);
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText || `HTTP ${r.status}` }));
+      throw new ApiError(r.status, err.detail ?? `HTTP ${r.status}`);
+    }
+    return r.json();
   },
 
   // Passport
@@ -244,6 +285,8 @@ export interface DecisionReceipt {
   final_total: number;
   authorization_status: string;
   payment_status: string;
+  _transaction_status?: string;
+  _razorpay_order_id?: string;
 }
 
 export interface AuditLogEntry {
@@ -276,13 +319,13 @@ export interface DecliningProductInsight {
 }
 
 export interface SalesInsights {
-  trend_pct: number;
-  total_units_recent: number;
-  total_revenue_recent: number;
-  total_units_prior: number;
-  total_revenue_prior: number;
-  top_products: TopProductInsight[];
-  declining_products: DecliningProductInsight[];
+  trend_pct?: number | null;
+  total_units_recent?: number | null;
+  total_revenue_recent?: number | null;
+  total_units_prior?: number | null;
+  total_revenue_prior?: number | null;
+  top_products?: TopProductInsight[];
+  declining_products?: DecliningProductInsight[];
 }
 
 export interface GrowthRecommendedAction {
@@ -299,13 +342,13 @@ export interface GrowthOpportunity {
   merchant_id: string;
   opportunity_type: string;
   title: string;
-  evidence: Record<string, unknown>;
-  recommended_action: GrowthRecommendedAction;
-  estimated_discount_exposure: number;
-  policy_outcome: "allowed" | "requires_approval" | "blocked";
-  policy_reasons: string[];
-  status: "pending_approval" | "executing" | "completed" | "rejected_by_merchant" | "blocked" | "failed";
-  created_at: string;
+  evidence?: Record<string, unknown>;
+  recommended_action?: GrowthRecommendedAction;
+  estimated_discount_exposure?: number | null;
+  policy_outcome: "allowed" | "requires_approval" | "blocked" | string;
+  policy_reasons?: string[];
+  status: "new" | "pending_approval" | "executing" | "completed" | "rejected_by_merchant" | "blocked" | "failed" | string;
+  created_at?: string;
   updated_at?: string;
 }
 
@@ -341,22 +384,27 @@ export async function streamCopilotChat(
   },
   history?: Array<{ role: string; content: string }>
 ) {
-  const res = await fetch(`${API_BASE}/merchants/${merchantId}/copilot/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ message, history: history || [] }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/merchants/${merchantId}/copilot/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message, history: history || [] }),
+    });
+  } catch (netErr: any) {
+    throw new ApiError(0, "Network failure: Unable to reach Copilot service", netErr?.message);
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    throw new ApiError(res.status, err.detail ?? `HTTP ${res.status}`);
   }
 
   const reader = res.body?.getReader();
-  if (!reader) throw new Error("No response body stream");
+  if (!reader) throw new ApiError(res.status, "No response body stream");
 
   const decoder = new TextDecoder();
   let buffer = "";

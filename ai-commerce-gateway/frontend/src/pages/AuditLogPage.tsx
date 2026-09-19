@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Filter, ArrowRight } from "lucide-react";
-import { api, AuditLogEntry } from "../lib/api";
+import { Filter, ArrowRight, AlertCircle, RefreshCw } from "lucide-react";
+import { api, AuditLogEntry, ApiError } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
+import { formatDate } from "../lib/formatters";
 import { Card } from "../design-system/Card";
 import { Badge } from "../design-system/Badge";
 import { Button } from "../design-system/Button";
@@ -32,8 +33,28 @@ export function AuditLogPage() {
     setError(null);
     api
       .getAuditLog(merchantId, token, selectedStage || undefined)
-      .then(setLogs)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load audit logs"))
+      .then((data) => {
+        setLogs(Array.isArray(data) ? data : []);
+        setError(null);
+      })
+      .catch((e: unknown) => {
+        setLogs([]);
+        if (e instanceof ApiError) {
+          if (e.isUnauthorized) {
+            setError("Authentication session expired or invalid. Please sign in again.");
+          } else if (e.isForbidden) {
+            setError("Access denied: You are not authorized to view audit logs for this merchant.");
+          } else if (e.isNetworkError) {
+            setError("Network connection failure: Unable to reach backend service. Please check your network connection.");
+          } else if (e.isServerError) {
+            setError(`Failed to load audit logs: Internal server error (HTTP ${e.status}).`);
+          } else {
+            setError(e.detail || e.message || `API error (HTTP ${e.status})`);
+          }
+        } else {
+          setError(e instanceof Error ? e.message : "Failed to load audit logs");
+        }
+      })
       .finally(() => setLoading(false));
   }, [merchantId, token, selectedStage]);
 
@@ -41,11 +62,13 @@ export function AuditLogPage() {
     loadLogs();
   }, [loadLogs]);
 
-  if (loading && logs.length === 0) {
+  if (loading && logs.length === 0 && !error) {
     return (
       <div className="p-8">
         <h1 className="font-heading text-2xl font-bold text-ink mb-2">Audit Log</h1>
-        <p className="font-body text-sm text-ink/50">Loading logs…</p>
+        <p className="font-body text-sm text-ink/50 flex items-center gap-2">
+          <RefreshCw className="animate-spin" size={16} /> Loading logs…
+        </p>
       </div>
     );
   }
@@ -75,21 +98,31 @@ export function AuditLogPage() {
               ))}
             </select>
           </div>
-          <Button variant="outline" size="sm" onClick={loadLogs}>
+          <Button variant="outline" size="sm" onClick={loadLogs} disabled={loading}>
+            <RefreshCw className={`mr-1.5 ${loading ? "animate-spin" : ""}`} size={14} />
             Refresh
           </Button>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 bg-coral/10 border border-coral/30 rounded-xl px-4 py-2">
-          <span className="font-body text-sm text-coral">{error}</span>
-        </div>
-      )}
-
-      {logs.length === 0 ? (
-        <Card>
-          <p className="font-body text-sm text-ink/50 text-center py-8">
+      {error ? (
+        <Card className="p-8 text-center bg-white border border-border">
+          <div className="flex flex-col items-center justify-center max-w-md mx-auto">
+            <div className="w-10 h-10 rounded-full bg-coral/10 flex items-center justify-center text-coral mb-3">
+              <AlertCircle size={20} />
+            </div>
+            <h3 className="font-heading font-semibold text-ink text-base mb-1">
+              Failed to load audit logs
+            </h3>
+            <p className="font-body text-xs text-ink/60 mb-4 leading-relaxed">{error}</p>
+            <Button variant="outline" size="sm" onClick={loadLogs}>
+              Retry
+            </Button>
+          </div>
+        </Card>
+      ) : logs.length === 0 ? (
+        <Card className="p-8 text-center bg-white border border-border">
+          <p className="font-body text-sm text-ink/50 py-4">
             No audit logs found.
           </p>
         </Card>
@@ -114,7 +147,7 @@ export function AuditLogPage() {
                     className={`hover:bg-surface/60 transition-colors ${!isLast ? "border-b border-border" : ""}`}
                   >
                     <td className="px-4 py-3 font-mono text-xs text-ink/50 whitespace-nowrap">
-                      {new Date(log.timestamp).toLocaleString()}
+                      {formatDate(log.timestamp)}
                     </td>
                     <td className="px-4 py-3 font-body text-xs text-ink/70">
                       <Badge variant="surface">{log.actor}</Badge>
